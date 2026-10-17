@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>Gunbound Minimalista - Protótipo</title>
+    <title>Office Wars - Fase 3: Dois Jogadores e Turnos</title>
     <style>
       body {
         background: #1e1e24;
@@ -14,162 +14,327 @@
         margin: 0;
         padding: 20px;
       }
-      canvas {
+      #gameContainer {
+        position: relative;
+        width: 800px;
+        height: 400px;
         border: 2px solid #444;
-        background: #87ceeb; /* Céu */
         box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+        background: #87ceeb;
+        overflow: hidden;
       }
-      .hud {
-        margin-top: 10px;
+      canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+      .hud-panel {
+        margin-top: 15px;
         display: flex;
-        gap: 20px;
+        justify-content: space-between;
+        width: 800px;
         font-weight: bold;
+      }
+      .player1-info {
+        color: #d9534f;
+      }
+      .player2-info {
+        color: #337ab7;
+      }
+      .game-status {
+        color: #f0ad4e;
+        text-align: center;
+        margin-top: 5px;
       }
     </style>
   </head>
   <body>
-    <h1>Gunbound JS - Protótipo Base</h1>
-    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <h1>Office Wars - Dois Jogadores & Turnos</h1>
 
-    <div class="hud">
-      <div>Ângulo: <span id="angleDisplay">45</span>°</div>
-      <div>Força: <span id="powerDisplay">0</span>%</div>
-      <div>Vento: <span id="windDisplay">0</span></div>
+    <div id="gameContainer">
+      <canvas id="terrainCanvas" width="800" height="400"></canvas>
+      <canvas id="gameCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="hud-panel">
+      <div class="player1-info">
+        Jogador 1 (Vermelho) - HP: <span id="hp1">100</span>
+      </div>
+      <div class="game-status">
+        Turno: <span id="turnDisplay">Jogador 1</span> | Vento:
+        <span id="windDisplay">0</span>
+      </div>
+      <div class="player2-info">
+        Jogador 2 (Azul) - HP: <span id="hp2">100</span>
+      </div>
     </div>
 
     <p>
       Controles: <strong>Setas Cima/Baixo</strong> = Ajusta Ângulo | Segure
-      <strong>ESPAÇO</strong> = Carrega Força / Solte = Atira
+      <strong>ESPAÇO</strong> = Carrega Força / Solte = Dispara
     </p>
 
     <script>
-      const canvas = document.getElementById("gameCanvas");
-      const ctx = canvas.getContext("2d");
+      const gameCanvas = document.getElementById("gameCanvas");
+      const ctx = gameCanvas.getContext("2d");
 
-      // Telas de HUD
-      const angleDisplay = document.getElementById("angleDisplay");
-      const powerDisplay = document.getElementById("powerDisplay");
+      const terrainCanvas = document.getElementById("terrainCanvas");
+      const terrainCtx = terrainCanvas.getContext("2d");
+
+      const hp1Display = document.getElementById("hp1");
+      const hp2Display = document.getElementById("hp2");
+      const turnDisplay = document.getElementById("turnDisplay");
       const windDisplay = document.getElementById("windDisplay");
 
-      // Constantes do Jogo
       const GRAVITY = 0.25;
-      let wind = Math.floor(Math.random() * 21) - 10; // Vento varia entre -10 e +10
+      const CRATER_RADIUS = 28;
+      let wind = Math.floor(Math.random() * 21) - 10;
 
-      // Jogador (Mobile simplificado)
-      const player = {
-        x: 100,
-        y: 350,
-        angle: 45, // em graus
+      // Estado do Jogo
+      let currentTurn = 1; // 1 para Jogador 1, 2 para Jogador 2
+      let isAnimating = false; // Impede atirar enquanto o projétil estiver no ar ou tanque caindo
+
+      // Inicialização do Terreno
+      function initTerrain() {
+        terrainCtx.fillStyle = "#4e972d";
+        terrainCtx.beginPath();
+        terrainCtx.moveTo(0, 400);
+
+        for (let x = 0; x <= terrainCanvas.width; x++) {
+          const y = 280 + Math.sin(x * 0.012) * 35 + Math.cos(x * 0.025) * 15;
+          terrainCtx.lineTo(x, y);
+        }
+
+        terrainCtx.lineTo(800, 400);
+        terrainCtx.closePath();
+        terrainCtx.fill();
+      }
+
+      function isSolid(x, y) {
+        if (x < 0 || x >= terrainCanvas.width || y >= terrainCanvas.height)
+          return true;
+        if (y < 0) return false;
+        const pixel = terrainCtx.getImageData(
+          Math.floor(x),
+          Math.floor(y),
+          1,
+          1
+        ).data;
+        return pixel[3] > 0;
+      }
+
+      function createCrater(x, y, radius) {
+        terrainCtx.save();
+        terrainCtx.globalCompositeOperation = "destination-out";
+        terrainCtx.beginPath();
+        terrainCtx.arc(x, y, radius, 0, Math.PI * 2);
+        terrainCtx.fill();
+        terrainCtx.restore();
+      }
+
+      // Jogadores
+      const player1 = {
+        x: 120,
+        y: 100,
+        width: 24,
+        height: 14,
+        angle: 45,
         power: 0,
+        hp: 100,
+        color: "#d9534f",
         isCharging: false,
       };
 
-      // Objeto do Projétil (Tiro)
+      const player2 = {
+        x: 680,
+        y: 100,
+        width: 24,
+        height: 14,
+        angle: 135,
+        power: 0,
+        hp: 100,
+        color: "#337ab7",
+        isCharging: false,
+      };
+
       let projectile = null;
 
-      // Atualizar Vento no HUD
-      windDisplay.textContent =
-        wind > 0 ? `+${wind} ➔` : wind < 0 ? `${wind} ⬅` : "0 (Sem Vento)";
+      function updateWindHUD() {
+        windDisplay.textContent =
+          wind > 0 ? `+${wind} ➔` : wind < 0 ? `${wind} ⬅` : "0 (Sem Vento)";
+      }
+      updateWindHUD();
 
-      // Loop do Teclado
+      // Controles
       const keys = {};
       window.addEventListener("keydown", (e) => {
         keys[e.code] = true;
-        if (e.code === "Space" && !e.repeat && !projectile) {
-          player.isCharging = true;
-          player.power = 0;
+
+        // Inicia carga de força com Espaço (apenas se não houver tiro em andamento)
+        const activePlayer = currentTurn === 1 ? player1 : player2;
+        if (e.code === "Space" && !e.repeat && !isAnimating) {
+          activePlayer.isCharging = true;
+          activePlayer.power = 0;
         }
       });
 
       window.addEventListener("keyup", (e) => {
         keys[e.code] = false;
-        if (e.code === "Space" && player.isCharging) {
-          player.isCharging = false;
-          fireProjectile();
+        const activePlayer = currentTurn === 1 ? player1 : player2;
+        if (e.code === "Space" && activePlayer.isCharging) {
+          activePlayer.isCharging = false;
+          fireProjectile(activePlayer);
         }
       });
 
-      function fireProjectile() {
-        const rad = (player.angle * Math.PI) / 180;
-        const speed = player.power * 0.25; // Escala de velocidade
+      function fireProjectile(p) {
+        const rad = (p.angle * Math.PI) / 180;
+        const speed = p.power * 0.28;
 
         projectile = {
-          x: player.x,
-          y: player.y - 10,
+          x: p.x,
+          y: p.y - p.height / 2,
           vx: Math.cos(rad) * speed,
-          vy: -Math.sin(rad) * speed, // Y cresce para baixo no Canvas
+          vy: -Math.sin(rad) * speed,
         };
+        isAnimating = true;
+      }
+
+      function switchTurn() {
+        currentTurn = currentTurn === 1 ? 2 : 1;
+        turnDisplay.textContent = `Jogador ${currentTurn}`;
+        turnDisplay.style.color = currentTurn === 1 ? "#d9534f" : "#337ab7";
+
+        // Novo vento aleatório no turno
+        wind = Math.floor(Math.random() * 21) - 10;
+        updateWindHUD();
       }
 
       function update() {
-        // Controles de Ângulo
-        if (keys["ArrowUp"] && player.angle < 90) player.angle += 1;
-        if (keys["ArrowDown"] && player.angle > 0) player.angle -= 1;
-        angleDisplay.textContent = player.angle;
+        const activePlayer = currentTurn === 1 ? player1 : player2;
 
-        // Carregamento de Força
-        if (player.isCharging) {
-          player.power += 1.5;
-          if (player.power > 100) player.power = 100;
-          powerDisplay.textContent = Math.floor(player.power);
+        // Ajustes de Ângulo por Turno
+        if (!isAnimating) {
+          if (currentTurn === 1) {
+            if (keys["ArrowUp"] && activePlayer.angle < 90)
+              activePlayer.angle += 1;
+            if (keys["ArrowDown"] && activePlayer.angle > 0)
+              activePlayer.angle -= 1;
+          } else {
+            // Jogador 2 mira para a esquerda (ângulos de 90 a 180)
+            if (keys["ArrowUp"] && activePlayer.angle < 180)
+              activePlayer.angle += 1;
+            if (keys["ArrowDown"] && activePlayer.angle > 90)
+              activePlayer.angle -= 1;
+          }
+
+          // Carregamento de força
+          if (activePlayer.isCharging) {
+            activePlayer.power += 1.5;
+            if (activePlayer.power > 100) activePlayer.power = 100;
+          }
         }
 
-        // Atualização da Física do Projétil
-        if (projectile) {
-          projectile.vx += wind * 0.005; // Influência do Vento
-          projectile.vy += GRAVITY; // Influência da Gravidade
+        // Gravidade dos Tanques
+        [player1, player2].forEach((p) => {
+          if (!isSolid(p.x, p.y + 1)) {
+            p.y += 2;
+          } else {
+            while (isSolid(p.x, p.y) && p.y > 0) {
+              p.y -= 1;
+            }
+          }
+        });
 
+        // Física do Projétil
+        if (projectile) {
+          projectile.vx += wind * 0.005;
+          projectile.vy += GRAVITY;
           projectile.x += projectile.vx;
           projectile.y += projectile.vy;
 
-          // Colisão simples com o chão ou fora da tela
-          if (
-            projectile.y >= 360 ||
-            projectile.x > canvas.width ||
-            projectile.x < 0
-          ) {
-            projectile = null; // Reseta tiro
-            // Sorteia novo vento a cada tiro
-            wind = Math.floor(Math.random() * 21) - 10;
-            windDisplay.textContent =
-              wind > 0
-                ? `+${wind} ➔`
-                : wind < 0
-                ? `${wind} ⬅`
-                : "0 (Sem Vento)";
+          // Colisão com terreno ou limites da tela
+          const hitGround = isSolid(projectile.x, projectile.y);
+          const outOfBounds =
+            projectile.x > gameCanvas.width ||
+            projectile.x < 0 ||
+            projectile.y > gameCanvas.height;
+
+          if (hitGround || outOfBounds) {
+            if (hitGround) {
+              createCrater(projectile.x, projectile.y, CRATER_RADIUS);
+
+              // Checar dano nos jogadores com base na distância da explosão
+              [player1, player2].forEach((p) => {
+                const dist = Math.hypot(
+                  projectile.x - p.x,
+                  projectile.y - (p.y - p.height / 2)
+                );
+                if (dist < 50) {
+                  const damage = Math.floor((1 - dist / 50) * 45); // Dano máximo de 45 HP
+                  p.hp = Math.max(0, p.hp - damage);
+                }
+              });
+
+              hp1Display.textContent = player1.hp;
+              hp2Display.textContent = player2.hp;
+            }
+
+            projectile = null;
+
+            // Pequeno delay antes de passar o turno para estabilizar a gravidade dos tanques
+            setTimeout(() => {
+              isAnimating = false;
+              if (player1.hp > 0 && player2.hp > 0) {
+                switchTurn();
+              } else {
+                alert(
+                  player1.hp <= 0 ? "Jogador 2 Venceu!" : "Jogador 1 Venceu!"
+                );
+                document.location.reload();
+              }
+            }, 500);
           }
         }
       }
 
-      function draw() {
-        // Limpar tela
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      function drawTank(p) {
+        // Corpo do Tanque
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - p.width / 2, p.y - p.height, p.width, p.height);
 
-        // Desenhar Chão Temporário
-        ctx.fillStyle = "#4e972d";
-        ctx.fillRect(0, 360, canvas.width, 40);
-
-        // Desenhar Jogador (Tanque simples)
-        ctx.fillStyle = "#d9534f";
-        ctx.fillRect(player.x - 15, player.y - 10, 30, 20);
-
-        // Desenhar Canhão
-        const rad = (player.angle * Math.PI) / 180;
-        ctx.strokeStyle = "#000";
+        // Canhão
+        const rad = (p.angle * Math.PI) / 180;
+        ctx.strokeStyle = "#111";
         ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.moveTo(player.x, player.y - 5);
+        ctx.moveTo(p.x, p.y - p.height / 2);
         ctx.lineTo(
-          player.x + Math.cos(rad) * 25,
-          player.y - 5 - Math.sin(rad) * 25
+          p.x + Math.cos(rad) * 22,
+          p.y - p.height / 2 - Math.sin(rad) * 22
         );
         ctx.stroke();
 
+        // Barra de Força individual se estiver carregando
+        if (p.isCharging) {
+          ctx.fillStyle = "#333";
+          ctx.fillRect(p.x - 20, p.y - p.height - 18, 40, 6);
+          ctx.fillStyle = "#f0ad4e";
+          ctx.fillRect(p.x - 19, p.y - p.height - 17, (38 * p.power) / 100, 4);
+        }
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+        drawTank(player1);
+        drawTank(player2);
+
         // Desenhar Projétil
         if (projectile) {
-          ctx.fillStyle = "#000";
+          ctx.fillStyle = "#222";
           ctx.beginPath();
-          ctx.arc(projectile.x, projectile.y, 5, 0, Math.PI * 2);
+          ctx.arc(projectile.x, projectile.y, 4, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -180,6 +345,7 @@
         requestAnimationFrame(gameLoop);
       }
 
+      initTerrain();
       gameLoop();
     </script>
   </body>
