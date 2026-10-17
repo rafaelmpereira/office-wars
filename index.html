@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Gunbound Minimalista - Protótipo</title>
+    <style>
+      body {
+        background: #1e1e24;
+        color: #fff;
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0;
+        padding: 20px;
+      }
+      canvas {
+        border: 2px solid #444;
+        background: #87ceeb; /* Céu */
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+      }
+      .hud {
+        margin-top: 10px;
+        display: flex;
+        gap: 20px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Gunbound JS - Protótipo Base</h1>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+    <div class="hud">
+      <div>Ângulo: <span id="angleDisplay">45</span>°</div>
+      <div>Força: <span id="powerDisplay">0</span>%</div>
+      <div>Vento: <span id="windDisplay">0</span></div>
+    </div>
+
+    <p>
+      Controles: <strong>Setas Cima/Baixo</strong> = Ajusta Ângulo | Segure
+      <strong>ESPAÇO</strong> = Carrega Força / Solte = Atira
+    </p>
+
+    <script>
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+
+      // Telas de HUD
+      const angleDisplay = document.getElementById("angleDisplay");
+      const powerDisplay = document.getElementById("powerDisplay");
+      const windDisplay = document.getElementById("windDisplay");
+
+      // Constantes do Jogo
+      const GRAVITY = 0.25;
+      let wind = Math.floor(Math.random() * 21) - 10; // Vento varia entre -10 e +10
+
+      // Jogador (Mobile simplificado)
+      const player = {
+        x: 100,
+        y: 350,
+        angle: 45, // em graus
+        power: 0,
+        isCharging: false,
+      };
+
+      // Objeto do Projétil (Tiro)
+      let projectile = null;
+
+      // Atualizar Vento no HUD
+      windDisplay.textContent =
+        wind > 0 ? `+${wind} ➔` : wind < 0 ? `${wind} ⬅` : "0 (Sem Vento)";
+
+      // Loop do Teclado
+      const keys = {};
+      window.addEventListener("keydown", (e) => {
+        keys[e.code] = true;
+        if (e.code === "Space" && !e.repeat && !projectile) {
+          player.isCharging = true;
+          player.power = 0;
+        }
+      });
+
+      window.addEventListener("keyup", (e) => {
+        keys[e.code] = false;
+        if (e.code === "Space" && player.isCharging) {
+          player.isCharging = false;
+          fireProjectile();
+        }
+      });
+
+      function fireProjectile() {
+        const rad = (player.angle * Math.PI) / 180;
+        const speed = player.power * 0.25; // Escala de velocidade
+
+        projectile = {
+          x: player.x,
+          y: player.y - 10,
+          vx: Math.cos(rad) * speed,
+          vy: -Math.sin(rad) * speed, // Y cresce para baixo no Canvas
+        };
+      }
+
+      function update() {
+        // Controles de Ângulo
+        if (keys["ArrowUp"] && player.angle < 90) player.angle += 1;
+        if (keys["ArrowDown"] && player.angle > 0) player.angle -= 1;
+        angleDisplay.textContent = player.angle;
+
+        // Carregamento de Força
+        if (player.isCharging) {
+          player.power += 1.5;
+          if (player.power > 100) player.power = 100;
+          powerDisplay.textContent = Math.floor(player.power);
+        }
+
+        // Atualização da Física do Projétil
+        if (projectile) {
+          projectile.vx += wind * 0.005; // Influência do Vento
+          projectile.vy += GRAVITY; // Influência da Gravidade
+
+          projectile.x += projectile.vx;
+          projectile.y += projectile.vy;
+
+          // Colisão simples com o chão ou fora da tela
+          if (
+            projectile.y >= 360 ||
+            projectile.x > canvas.width ||
+            projectile.x < 0
+          ) {
+            projectile = null; // Reseta tiro
+            // Sorteia novo vento a cada tiro
+            wind = Math.floor(Math.random() * 21) - 10;
+            windDisplay.textContent =
+              wind > 0
+                ? `+${wind} ➔`
+                : wind < 0
+                ? `${wind} ⬅`
+                : "0 (Sem Vento)";
+          }
+        }
+      }
+
+      function draw() {
+        // Limpar tela
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Desenhar Chão Temporário
+        ctx.fillStyle = "#4e972d";
+        ctx.fillRect(0, 360, canvas.width, 40);
+
+        // Desenhar Jogador (Tanque simples)
+        ctx.fillStyle = "#d9534f";
+        ctx.fillRect(player.x - 15, player.y - 10, 30, 20);
+
+        // Desenhar Canhão
+        const rad = (player.angle * Math.PI) / 180;
+        ctx.strokeStyle = "#000";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(player.x, player.y - 5);
+        ctx.lineTo(
+          player.x + Math.cos(rad) * 25,
+          player.y - 5 - Math.sin(rad) * 25
+        );
+        ctx.stroke();
+
+        // Desenhar Projétil
+        if (projectile) {
+          ctx.fillStyle = "#000";
+          ctx.beginPath();
+          ctx.arc(projectile.x, projectile.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+      }
+
+      gameLoop();
+    </script>
+  </body>
+</html>
