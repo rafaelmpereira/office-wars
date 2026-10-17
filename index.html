@@ -2,112 +2,335 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>Office Wars - Fase 3: Dois Jogadores e Turnos</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gunbound Canvas Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
       body {
-        background: #1e1e24;
-        color: #fff;
-        font-family: sans-serif;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin: 0;
-        padding: 20px;
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        user-select: none;
       }
+
+      /* Container do Canvas com posicionamento relativo */
       #gameContainer {
         position: relative;
         width: 800px;
         height: 400px;
-        border: 2px solid #444;
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
-        background: #87ceeb;
+        border-radius: 12px;
         overflow: hidden;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5),
+          0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        background: linear-gradient(to bottom, #38bdf8, #bae6fd);
       }
+
       canvas {
         position: absolute;
         top: 0;
         left: 0;
       }
-      .hud-panel {
-        margin-top: 15px;
-        display: flex;
-        justify-content: space-between;
-        width: 800px;
-        font-weight: bold;
+
+      /* Estilização da Barra de Força Grande */
+      .power-bar-container {
+        position: relative;
+        width: 100%;
+        height: 28px;
+        background: rgba(15, 23, 42, 0.85);
+        border-radius: 9999px;
+        overflow: hidden;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
       }
-      .player1-info {
-        color: #d9534f;
+
+      .power-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%);
+        transition: width 0.016s linear;
+        box-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
       }
-      .player2-info {
-        color: #337ab7;
+
+      /* Marcador do histórico da jogada anterior */
+      .last-power-marker {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background-color: #38bdf8;
+        box-shadow: 0 0 8px 2px rgba(56, 189, 248, 0.9);
+        z-index: 10;
+        transform: translateX(-50%);
+        display: none;
       }
-      .game-status {
-        color: #f0ad4e;
-        text-align: center;
-        margin-top: 5px;
+
+      .last-power-label {
+        position: absolute;
+        top: -20px;
+        transform: translateX(-50%);
+        font-size: 11px;
+        font-weight: 800;
+        color: #38bdf8;
+        background: rgba(15, 23, 42, 0.9);
+        padding: 1px 6px;
+        border-radius: 4px;
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        white-space: nowrap;
+        display: none;
       }
     </style>
   </head>
-  <body>
-    <h1>Office Wars - Dois Jogadores & Turnos</h1>
+  <body
+    class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4"
+  >
+    <!-- Header & Título -->
+    <header class="mb-4 text-center">
+      <h1
+        class="text-3xl font-extrabold tracking-tight text-amber-400 drop-shadow-md"
+      >
+        GUNBOUND
+        <span class="text-slate-300 text-xl font-medium">Canvas Edition</span>
+      </h1>
+      <p class="text-xs text-slate-400 mt-1">
+        Jogo de Artilharia por Turnos com Terreno Destruível
+      </p>
+    </header>
 
-    <div id="gameContainer">
-      <canvas id="terrainCanvas" width="800" height="400"></canvas>
-      <canvas id="gameCanvas" width="800" height="400"></canvas>
-    </div>
+    <!-- Container Principal do Jogo -->
+    <main class="flex flex-col items-center gap-3">
+      <!-- Painel de Status / HUD Topo -->
+      <div
+        class="w-[800px] bg-slate-800/90 border border-slate-700/80 rounded-xl p-3 flex justify-between items-center shadow-lg backdrop-blur"
+      >
+        <!-- Jogador 1 (Red) -->
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-lg bg-red-500/20 border border-red-500 flex items-center justify-center font-bold text-red-400 text-sm"
+          >
+            P1
+          </div>
+          <div>
+            <div
+              class="text-xs font-semibold text-slate-400 uppercase tracking-wider"
+            >
+              Jogador 1
+            </div>
+            <div
+              class="w-32 bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-700 mt-1"
+            >
+              <div
+                id="hp1Bar"
+                class="bg-red-500 h-full w-full transition-all duration-300"
+              ></div>
+            </div>
+            <div class="text-xs font-bold text-red-400 mt-0.5">
+              <span id="hp1Text">100</span> / 100 HP
+            </div>
+          </div>
+        </div>
 
-    <div class="hud-panel">
-      <div class="player1-info">
-        Jogador 1 (Vermelho) - HP: <span id="hp1">100</span>
-      </div>
-      <div class="game-status">
-        Turno: <span id="turnDisplay">Jogador 1</span> | Vento:
-        <span id="windDisplay">0</span>
-      </div>
-      <div class="player2-info">
-        Jogador 2 (Azul) - HP: <span id="hp2">100</span>
-      </div>
-    </div>
+        <!-- Centro: Turno + Vento -->
+        <div class="flex flex-col items-center">
+          <div
+            id="turnBadge"
+            class="px-4 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/50 shadow-sm"
+          >
+            Turno: Jogador 1
+          </div>
+          <div
+            class="mt-2 flex items-center gap-2 bg-slate-950/70 px-3 py-1 rounded-lg border border-slate-800"
+          >
+            <span class="text-xs font-bold text-slate-400">VENTO:</span>
+            <span id="windDisplay" class="text-sm font-extrabold text-amber-400"
+              >0</span
+            >
+          </div>
+        </div>
 
-    <p>
-      Controles: <strong>Setas Cima/Baixo</strong> = Ajusta Ângulo | Segure
-      <strong>ESPAÇO</strong> = Carrega Força / Solte = Dispara
-    </p>
+        <!-- Jogador 2 (Blue) -->
+        <div class="flex items-center gap-3 flex-row-reverse text-right">
+          <div
+            class="w-10 h-10 rounded-lg bg-blue-500/20 border border-blue-500 flex items-center justify-center font-bold text-blue-400 text-sm"
+          >
+            P2
+          </div>
+          <div>
+            <div
+              class="text-xs font-semibold text-slate-400 uppercase tracking-wider"
+            >
+              Jogador 2
+            </div>
+            <div
+              class="w-32 bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-700 mt-1"
+            >
+              <div
+                id="hp2Bar"
+                class="bg-blue-500 h-full w-full transition-all duration-300"
+              ></div>
+            </div>
+            <div class="text-xs font-bold text-blue-400 mt-0.5">
+              <span id="hp2Text">100</span> / 100 HP
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tela do Canvas -->
+      <div id="gameContainer">
+        <canvas id="terrainCanvas" width="800" height="400"></canvas>
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+      </div>
+
+      <!-- Painel da Barra de Força Expansível & Ângulo -->
+      <div
+        class="w-[800px] bg-slate-800/90 border border-slate-700/80 rounded-xl p-4 flex flex-col gap-3 shadow-lg"
+      >
+        <div
+          class="flex justify-between items-center text-xs font-bold text-slate-300"
+        >
+          <div class="flex items-center gap-2">
+            <span>FORÇA DO TIRO:</span>
+            <span
+              id="powerPercent"
+              class="text-amber-400 text-sm font-extrabold"
+              >0%</span
+            >
+          </div>
+          <div class="flex items-center gap-4">
+            <!-- Histórico Completo de Força e Ângulo -->
+            <div class="text-sky-400 font-semibold" id="prevShotInfo">
+              P1 Anterior: -- | P2 Anterior: --
+            </div>
+            <div
+              class="bg-slate-900 px-3 py-1 rounded-md border border-slate-700"
+            >
+              ÂNGULO:
+              <span
+                id="angleDisplay"
+                class="text-emerald-400 font-extrabold text-sm"
+                >45°</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de Força Principal (Grande) -->
+        <div class="power-bar-container">
+          <!-- Marcador do histórico do tiro anterior do jogador atual -->
+          <div id="lastPowerMarker" class="last-power-marker"></div>
+          <div id="lastPowerLabel" class="last-power-label">Anterior</div>
+
+          <!-- Preenchimento da Força -->
+          <div id="powerBarFill" class="power-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- Rodapé de Controles -->
+      <div
+        class="w-[800px] flex justify-between items-center text-xs text-slate-400 px-2"
+      >
+        <div>
+          <strong>Controles:</strong>
+          <span
+            class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 border border-slate-700"
+            >Setas Cima / Baixo</span
+          >
+          = Ajusta Ângulo
+        </div>
+        <div>
+          <span
+            class="bg-slate-800 px-2 py-0.5 rounded text-slate-200 border border-slate-700"
+            >Segurar ESPAÇO</span
+          >
+          = Carregar Força |
+          <span
+            class="bg-slate-800 px-2 py-0.5 rounded text-slate-200 border border-slate-700"
+            >Soltar ESPAÇO</span
+          >
+          = Atirar
+        </div>
+      </div>
+    </main>
+
+    <!-- Importação do arquivo de configurações externo -->
+    <script src="config.js"></script>
 
     <script>
+      // --- CANVAS & ELEMENTOS DOM ---
       const gameCanvas = document.getElementById("gameCanvas");
       const ctx = gameCanvas.getContext("2d");
 
       const terrainCanvas = document.getElementById("terrainCanvas");
       const terrainCtx = terrainCanvas.getContext("2d");
 
-      const hp1Display = document.getElementById("hp1");
-      const hp2Display = document.getElementById("hp2");
-      const turnDisplay = document.getElementById("turnDisplay");
+      const hp1Bar = document.getElementById("hp1Bar");
+      const hp2Bar = document.getElementById("hp2Bar");
+      const hp1Text = document.getElementById("hp1Text");
+      const hp2Text = document.getElementById("hp2Text");
+
+      const turnBadge = document.getElementById("turnBadge");
       const windDisplay = document.getElementById("windDisplay");
+      const angleDisplay = document.getElementById("angleDisplay");
+      const powerPercent = document.getElementById("powerPercent");
+      const powerBarFill = document.getElementById("powerBarFill");
 
-      const GRAVITY = 0.25;
-      const CRATER_RADIUS = 28;
+      const lastPowerMarker = document.getElementById("lastPowerMarker");
+      const lastPowerLabel = document.getElementById("lastPowerLabel");
+      const prevShotInfo = document.getElementById("prevShotInfo");
+
       let wind = Math.floor(Math.random() * 21) - 10;
+      let currentTurn = 1;
+      let isAnimating = false;
 
-      // Estado do Jogo
-      let currentTurn = 1; // 1 para Jogador 1, 2 para Jogador 2
-      let isAnimating = false; // Impede atirar enquanto o projétil estiver no ar ou tanque caindo
+      // --- ESTRUTURA DOS JOGADORES ---
+      const player1 = {
+        id: 1,
+        x: 120,
+        y: 100,
+        width: 26,
+        height: 16,
+        angle: 45,
+        power: 0,
+        lastPower: null,
+        lastAngle: null,
+        hp: 100,
+        color: "#ef4444",
+        isCharging: false,
+      };
 
-      // Inicialização do Terreno
+      const player2 = {
+        id: 2,
+        x: 680,
+        y: 100,
+        width: 26,
+        height: 16,
+        angle: 135,
+        power: 0,
+        lastPower: null,
+        lastAngle: null,
+        hp: 100,
+        color: "#3b82f6",
+        isCharging: false,
+      };
+
+      let projectile = null;
+
+      // --- GERADORES DE TERRENO ---
       function initTerrain() {
-        terrainCtx.fillStyle = "#4e972d";
+        terrainCtx.fillStyle = "#15803d";
         terrainCtx.beginPath();
         terrainCtx.moveTo(0, 400);
 
         for (let x = 0; x <= terrainCanvas.width; x++) {
-          const y = 280 + Math.sin(x * 0.012) * 35 + Math.cos(x * 0.025) * 15;
+          const y = 270 + Math.sin(x * 0.012) * 35 + Math.cos(x * 0.028) * 18;
           terrainCtx.lineTo(x, y);
         }
 
         terrainCtx.lineTo(800, 400);
         terrainCtx.closePath();
         terrainCtx.fill();
+
+        terrainCtx.strokeStyle = "#22c55e";
+        terrainCtx.lineWidth = 4;
+        terrainCtx.stroke();
       }
 
       function isSolid(x, y) {
@@ -132,46 +355,66 @@
         terrainCtx.restore();
       }
 
-      // Jogadores
-      const player1 = {
-        x: 120,
-        y: 100,
-        width: 24,
-        height: 14,
-        angle: 45,
-        power: 0,
-        hp: 100,
-        color: "#d9534f",
-        isCharging: false,
-      };
+      // --- ATUALIZAÇÃO DA INTERFACE HUD ---
+      function updateHUD() {
+        hp1Bar.style.width = `${player1.hp}%`;
+        hp2Bar.style.width = `${player2.hp}%`;
+        hp1Text.textContent = player1.hp;
+        hp2Text.textContent = player2.hp;
 
-      const player2 = {
-        x: 680,
-        y: 100,
-        width: 24,
-        height: 14,
-        angle: 135,
-        power: 0,
-        hp: 100,
-        color: "#337ab7",
-        isCharging: false,
-      };
-
-      let projectile = null;
-
-      function updateWindHUD() {
-        windDisplay.textContent =
+        const windDir =
           wind > 0 ? `+${wind} ➔` : wind < 0 ? `${wind} ⬅` : "0 (Sem Vento)";
-      }
-      updateWindHUD();
+        windDisplay.textContent = windDir;
 
-      // Controles
+        if (currentTurn === 1) {
+          turnBadge.textContent = "Turno: Jogador 1 (Vermelho)";
+          turnBadge.className =
+            "px-4 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/50 shadow-sm";
+        } else {
+          turnBadge.textContent = "Turno: Jogador 2 (Azul)";
+          turnBadge.className =
+            "px-4 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/50 shadow-sm";
+        }
+
+        const activePlayer = currentTurn === 1 ? player1 : player2;
+        angleDisplay.textContent = `${activePlayer.angle}°`;
+
+        const p1Last =
+          player1.lastPower !== null
+            ? `${Math.round(player1.lastPower)}% (${player1.lastAngle}°)`
+            : "--";
+        const p2Last =
+          player2.lastPower !== null
+            ? `${Math.round(player2.lastPower)}% (${player2.lastAngle}°)`
+            : "--";
+        prevShotInfo.textContent = `P1 Ant: ${p1Last} | P2 Ant: ${p2Last}`;
+
+        updatePowerMarker(activePlayer.lastPower);
+      }
+
+      function updatePowerMarker(lastPower) {
+        if (lastPower !== null && lastPower > 0) {
+          lastPowerMarker.style.display = "block";
+          lastPowerMarker.style.left = `${lastPower}%`;
+
+          if (lastPowerLabel) {
+            lastPowerLabel.style.display = "block";
+            lastPowerLabel.style.left = `${lastPower}%`;
+            lastPowerLabel.textContent = `${Math.round(lastPower)}%`;
+          }
+        } else {
+          lastPowerMarker.style.display = "none";
+          if (lastPowerLabel) lastPowerLabel.style.display = "none";
+        }
+      }
+
+      // --- CONTROLES E INPUTS ---
       const keys = {};
+
       window.addEventListener("keydown", (e) => {
         keys[e.code] = true;
-
-        // Inicia carga de força com Espaço (apenas se não houver tiro em andamento)
         const activePlayer = currentTurn === 1 ? player1 : player2;
+
         if (e.code === "Space" && !e.repeat && !isAnimating) {
           activePlayer.isCharging = true;
           activePlayer.power = 0;
@@ -181,15 +424,18 @@
       window.addEventListener("keyup", (e) => {
         keys[e.code] = false;
         const activePlayer = currentTurn === 1 ? player1 : player2;
+
         if (e.code === "Space" && activePlayer.isCharging) {
           activePlayer.isCharging = false;
+          activePlayer.lastPower = activePlayer.power;
+          activePlayer.lastAngle = activePlayer.angle;
           fireProjectile(activePlayer);
         }
       });
 
       function fireProjectile(p) {
         const rad = (p.angle * Math.PI) / 180;
-        const speed = p.power * 0.28;
+        const speed = p.power * GAME_CONFIG.POWER_SCALE;
 
         projectile = {
           x: p.x,
@@ -197,23 +443,26 @@
           vx: Math.cos(rad) * speed,
           vy: -Math.sin(rad) * speed,
         };
+
         isAnimating = true;
       }
 
       function switchTurn() {
         currentTurn = currentTurn === 1 ? 2 : 1;
-        turnDisplay.textContent = `Jogador ${currentTurn}`;
-        turnDisplay.style.color = currentTurn === 1 ? "#d9534f" : "#337ab7";
-
-        // Novo vento aleatório no turno
         wind = Math.floor(Math.random() * 21) - 10;
-        updateWindHUD();
+
+        const activePlayer = currentTurn === 1 ? player1 : player2;
+        activePlayer.power = 0;
+        powerBarFill.style.width = "0%";
+        powerPercent.textContent = "0%";
+
+        updateHUD();
       }
 
+      // --- LOOP DE LÓGICA (UPDATE) ---
       function update() {
         const activePlayer = currentTurn === 1 ? player1 : player2;
 
-        // Ajustes de Ângulo por Turno
         if (!isAnimating) {
           if (currentTurn === 1) {
             if (keys["ArrowUp"] && activePlayer.angle < 90)
@@ -221,17 +470,19 @@
             if (keys["ArrowDown"] && activePlayer.angle > 0)
               activePlayer.angle -= 1;
           } else {
-            // Jogador 2 mira para a esquerda (ângulos de 90 a 180)
-            if (keys["ArrowUp"] && activePlayer.angle < 180)
-              activePlayer.angle += 1;
-            if (keys["ArrowDown"] && activePlayer.angle > 90)
+            if (keys["ArrowUp"] && activePlayer.angle > 90)
               activePlayer.angle -= 1;
+            if (keys["ArrowDown"] && activePlayer.angle < 180)
+              activePlayer.angle += 1;
           }
+          angleDisplay.textContent = `${activePlayer.angle}°`;
 
-          // Carregamento de força
           if (activePlayer.isCharging) {
-            activePlayer.power += 1.5;
+            activePlayer.power += GAME_CONFIG.CHARGING_SPEED;
             if (activePlayer.power > 100) activePlayer.power = 100;
+
+            powerBarFill.style.width = `${activePlayer.power}%`;
+            powerPercent.textContent = `${Math.floor(activePlayer.power)}%`;
           }
         }
 
@@ -248,12 +499,14 @@
 
         // Física do Projétil
         if (projectile) {
-          projectile.vx += wind * 0.005;
-          projectile.vy += GRAVITY;
-          projectile.x += projectile.vx;
-          projectile.y += projectile.vy;
+          const substeps = GAME_CONFIG.PROJECTILE_SUBSTEPS;
 
-          // Colisão com terreno ou limites da tela
+          projectile.vx += wind * 0.002 * substeps;
+          projectile.vy += GAME_CONFIG.GRAVITY * substeps;
+
+          projectile.x += projectile.vx * substeps;
+          projectile.y += projectile.vy * substeps;
+
           const hitGround = isSolid(projectile.x, projectile.y);
           const outOfBounds =
             projectile.x > gameCanvas.width ||
@@ -262,35 +515,38 @@
 
           if (hitGround || outOfBounds) {
             if (hitGround) {
-              createCrater(projectile.x, projectile.y, CRATER_RADIUS);
+              createCrater(
+                projectile.x,
+                projectile.y,
+                GAME_CONFIG.CRATER_RADIUS
+              );
 
-              // Checar dano nos jogadores com base na distância da explosão
               [player1, player2].forEach((p) => {
                 const dist = Math.hypot(
                   projectile.x - p.x,
                   projectile.y - (p.y - p.height / 2)
                 );
-                if (dist < 50) {
-                  const damage = Math.floor((1 - dist / 50) * 45); // Dano máximo de 45 HP
+                if (dist < 52) {
+                  const damage = Math.floor((1 - dist / 52) * 45);
                   p.hp = Math.max(0, p.hp - damage);
                 }
               });
 
-              hp1Display.textContent = player1.hp;
-              hp2Display.textContent = player2.hp;
+              updateHUD();
             }
 
             projectile = null;
 
-            // Pequeno delay antes de passar o turno para estabilizar a gravidade dos tanques
             setTimeout(() => {
               isAnimating = false;
               if (player1.hp > 0 && player2.hp > 0) {
                 switchTurn();
               } else {
-                alert(
-                  player1.hp <= 0 ? "Jogador 2 Venceu!" : "Jogador 1 Venceu!"
-                );
+                const winner =
+                  player1.hp <= 0
+                    ? "Jogador 2 (Azul) Venceu!"
+                    : "Jogador 1 (Vermelho) Venceu!";
+                alert(`FIM DE JOGO!\n\n${winner}`);
                 document.location.reload();
               }
             }, 500);
@@ -298,15 +554,20 @@
         }
       }
 
+      // --- LOOP DE DESENHO (RENDER) ---
       function drawTank(p) {
-        // Corpo do Tanque
         ctx.fillStyle = p.color;
-        ctx.fillRect(p.x - p.width / 2, p.y - p.height, p.width, p.height);
+        ctx.beginPath();
+        ctx.roundRect(p.x - p.width / 2, p.y - p.height, p.width, p.height, 4);
+        ctx.fill();
 
-        // Canhão
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        ctx.fillRect(p.x - p.width / 2, p.y - 4, p.width, 4);
+
         const rad = (p.angle * Math.PI) / 180;
-        ctx.strokeStyle = "#111";
+        ctx.strokeStyle = "#0f172a";
         ctx.lineWidth = 4;
+        ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(p.x, p.y - p.height / 2);
         ctx.lineTo(
@@ -315,12 +576,27 @@
         );
         ctx.stroke();
 
-        // Barra de Força individual se estiver carregando
-        if (p.isCharging) {
-          ctx.fillStyle = "#333";
-          ctx.fillRect(p.x - 20, p.y - p.height - 18, 40, 6);
-          ctx.fillStyle = "#f0ad4e";
-          ctx.fillRect(p.x - 19, p.y - p.height - 17, (38 * p.power) / 100, 4);
+        if (p.lastPower !== null && currentTurn === p.id && !isAnimating) {
+          ctx.fillStyle = "rgba(15, 23, 42, 0.75)";
+          ctx.fillRect(p.x - 30, p.y - p.height - 38, 60, 16);
+          ctx.fillStyle = "#38bdf8";
+          ctx.font = "bold 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            `Último: ${Math.round(p.lastPower)}% / ${p.lastAngle}°`,
+            p.x,
+            p.y - p.height - 26
+          );
+        }
+
+        if (currentTurn === p.id && !isAnimating) {
+          ctx.fillStyle = "#f59e0b";
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y - p.height - 10);
+          ctx.lineTo(p.x - 5, p.y - p.height - 18);
+          ctx.lineTo(p.x + 5, p.y - p.height - 18);
+          ctx.closePath();
+          ctx.fill();
         }
       }
 
@@ -330,11 +606,21 @@
         drawTank(player1);
         drawTank(player2);
 
-        // Desenhar Projétil
         if (projectile) {
-          ctx.fillStyle = "#222";
+          ctx.fillStyle = "#0f172a";
           ctx.beginPath();
           ctx.arc(projectile.x, projectile.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.beginPath();
+          ctx.arc(
+            projectile.x - projectile.vx * 1.5,
+            projectile.y - projectile.vy * 1.5,
+            2.5,
+            0,
+            Math.PI * 2
+          );
           ctx.fill();
         }
       }
@@ -346,6 +632,7 @@
       }
 
       initTerrain();
+      updateHUD();
       gameLoop();
     </script>
   </body>
