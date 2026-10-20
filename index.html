@@ -137,6 +137,16 @@
                 >45°</span
               >
             </div>
+            <div
+              class="bg-slate-900 px-3 py-1 rounded-md border border-slate-700"
+            >
+              PASSOS:
+              <span
+                id="stepsDisplay"
+                class="text-amber-400 font-extrabold text-sm"
+                >10</span
+              >
+            </div>
           </div>
         </div>
 
@@ -161,7 +171,12 @@
             class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 border border-slate-700"
             >Setas Cima / Baixo</span
           >
-          = Ajusta Ângulo
+          = Ajusta Ângulo |
+          <span
+            class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 border border-slate-700"
+            >Setas Esquerda / Direita</span
+          >
+          = Move
         </div>
         <div>
           <span
@@ -229,6 +244,9 @@
         hp: 100,
         color: "#ef4444",
         isCharging: false,
+        steps: GAME_CONFIG.MAX_MOVEMENT_STEPS,
+        lastMoveTime: 0,
+        jump: null,
       };
 
       const player2 = {
@@ -242,11 +260,15 @@
         lastPower: null,
         lastAngle: null,
         hp: 100,
-        color: "#3b82f6",
+        color: "#4fbd2d",
         isCharging: false,
+        steps: GAME_CONFIG.MAX_MOVEMENT_STEPS,
+        lastMoveTime: 0,
       };
 
       let projectile = null;
+      let isJumping = false;
+      let jumpVelocity = 0;
 
       // --- GERADORES DE TERRENO ---
       function initTerrain() {
@@ -329,6 +351,12 @@
             : "--";
         prevShotInfo.textContent = `P1 Ant: ${p1Last} | P2 Ant: ${p2Last}`;
 
+        // Atualizar passos restantes do jogador ativo
+        const stepsDisplay = document.getElementById("stepsDisplay");
+        if (stepsDisplay) {
+          stepsDisplay.textContent = activePlayer.steps;
+        }
+
         updatePowerMarker(activePlayer.lastPower);
       }
 
@@ -336,7 +364,7 @@
       function drawInGameWindCompass() {
         const cx = gameCanvas.width / 2; // Centro horizontal da tela (400px)
         const cy = 42; // Posição vertical flutuante
-        const radius = 24; // Raio do mostrador
+        const radius = 26; // Raio do mostrador
 
         ctx.save();
 
@@ -430,12 +458,37 @@
       const keys = {};
 
       window.addEventListener("keydown", (e) => {
+        // Impede o scroll da página ao usar as setas, espaço e CTRL
+        if (
+          e.code === "ArrowLeft" ||
+          e.code === "ArrowRight" ||
+          e.code === "ArrowUp" ||
+          e.code === "ArrowDown" ||
+          e.code === "Space" ||
+          e.code === "ControlLeft" ||
+          e.code === "ControlRight"
+        ) {
+          e.preventDefault();
+        }
+
         keys[e.code] = true;
         const activePlayer = currentTurn === 1 ? player1 : player2;
 
         if (e.code === "Space" && !e.repeat && !isAnimating) {
           activePlayer.isCharging = true;
           activePlayer.power = 0;
+        }
+
+        // Salto com CTRL
+        if (
+          (e.code === "ControlLeft" || e.code === "ControlRight") &&
+          !e.repeat &&
+          !isAnimating &&
+          !activePlayer.jump
+        ) {
+          if (tryJumpPlayer(activePlayer)) {
+            updateHUD();
+          }
         }
       });
 
@@ -479,6 +532,8 @@
 
         const activePlayer = currentTurn === 1 ? player1 : player2;
         activePlayer.power = 0;
+        activePlayer.steps = GAME_CONFIG.MAX_MOVEMENT_STEPS;
+        activePlayer.lastMoveTime = 0;
         powerBarFill.style.width = "0%";
         powerPercent.textContent = "0%";
 
@@ -498,11 +553,127 @@
           Math.floor(Math.random() * (maxTurns - minTurns + 1)) + minTurns;
       }
 
+      // --- MOVIMENTO DO MOBILE (CONSIDERANDO ACLIVES E DECLIVES) ---
+
+      // Obtém os pixels de uma coluna vertical do terreno
+      function getTerrainColumn(x) {
+        if (x < 0 || x >= terrainCanvas.width) return null;
+        return terrainCtx.getImageData(
+          Math.floor(x),
+          0,
+          1,
+          terrainCanvas.height
+        ).data;
+      }
+
+      // Encontra a superfície do solo (primeiro pixel sólido) dentro de uma janela de busca
+      function findGroundY(column, referenceY) {
+        const searchLimit = 140;
+        const top = Math.max(0, referenceY - searchLimit);
+        const bottom = Math.min(
+          terrainCanvas.height - 1,
+          referenceY + searchLimit
+        );
+
+        for (let y = top; y <= bottom; y++) {
+          if (column[y * 4 + 3] > 0) return y;
+        }
+
+        return null;
+      }
+
+      // Tenta mover o mobile. Retorna true se o movimento foi realizado.
+      function tryMovePlayer(player, direction, now) {
+        const halfWidth = player.width / 2;
+        const newX = player.x + direction * GAME_CONFIG.MOVEMENT_STEP_SIZE;
+
+        // Limites laterais da tela
+        if (newX - halfWidth < 0 || newX + halfWidth > gameCanvas.width) {
+          return false;
+        }
+
+        const currentColumn = getTerrainColumn(player.x);
+        const newColumn = getTerrainColumn(newX);
+        if (!currentColumn || !newColumn) return false;
+
+        const currentGroundY = findGroundY(currentColumn, player.y + 1);
+        const newGroundY = findGroundY(newColumn, player.y + 1);
+
+        // Se não há terreno na nova posição (buraco), permite o movimento
+        // A gravidade fará o mobile cair no buraco
+        if (newGroundY === null) {
+          player.x = newX;
+          player.steps -= 1;
+          player.lastMoveTime = now;
+          return true;
+        }
+
+        if (currentGroundY === null) return false;
+
+        // dy positivo = terreno sobe (aclive), negativo = desce (declive)
+        const dy = currentGroundY - newGroundY;
+        const slopeAngle =
+          (Math.atan2(Math.abs(dy), GAME_CONFIG.MOVEMENT_STEP_SIZE) * 180) /
+          Math.PI;
+
+        // Limite máximo de inclinação permitido
+        if (slopeAngle > GAME_CONFIG.MAX_SLOPE_ANGLE) return false;
+
+        // Se o movimento em aclives estiver desabilitado, só permite terreno plano
+        if (!GAME_CONFIG.ALLOW_SLOPE_MOVEMENT && slopeAngle > 0.5) return false;
+
+        // Custo em passos: subir aclive consome passos extras
+        let stepCost = 1;
+        if (dy > 0) {
+          stepCost += GAME_CONFIG.SLOPE_MOVEMENT_PENALTY;
+        }
+        if (player.steps < stepCost) return false;
+
+        player.x = newX;
+        player.steps -= stepCost;
+        player.lastMoveTime = now;
+        return true;
+      }
+
+      // --- FUNÇÃO DE SALTO (CTRL) ---
+      function tryJumpPlayer(player) {
+        // Verifica se tem passos suficientes
+        if (player.steps < GAME_CONFIG.JUMP_STEP_COST) return false;
+
+        // Direção do salto baseada no ângulo do cano
+        const rad = (player.angle * Math.PI) / 180;
+        const dir = Math.cos(rad) >= 0 ? 1 : -1;
+
+        // Calcula a nova posição X após o salto
+        const newX = player.x + dir * GAME_CONFIG.JUMP_DISTANCE;
+        const halfWidth = player.width / 2;
+
+        // Verifica limites da tela
+        if (newX - halfWidth < 0 || newX + halfWidth > gameCanvas.width) {
+          return false;
+        }
+
+        // Consome passos
+        player.steps -= GAME_CONFIG.JUMP_STEP_COST;
+        player.lastMoveTime = Date.now();
+
+        // Executa o salto: move horizontalmente e sobe
+        player.x = newX;
+        player.jump = {
+          vy: -GAME_CONFIG.JUMP_HEIGHT,
+          originalY: player.y,
+        };
+
+        return true;
+      }
+
       // --- LOOP DE LÓGICA (UPDATE) ---
       function update() {
         const activePlayer = currentTurn === 1 ? player1 : player2;
+        const now = Date.now();
 
         if (!isAnimating) {
+          // Controle de ângulo
           if (currentTurn === 1) {
             if (keys["ArrowUp"] && activePlayer.angle < 90)
               activePlayer.angle += 1;
@@ -516,6 +687,23 @@
           }
           angleDisplay.textContent = `${activePlayer.angle}°`;
 
+          // Controle de movimento (Left/Right) com consideração de aclives/declives
+          if (
+            activePlayer.steps > 0 &&
+            now - activePlayer.lastMoveTime >= GAME_CONFIG.MOVEMENT_INTERVAL
+          ) {
+            if (keys["ArrowLeft"]) {
+              if (tryMovePlayer(activePlayer, -1, now)) {
+                updateHUD();
+              }
+            }
+            if (keys["ArrowRight"]) {
+              if (tryMovePlayer(activePlayer, 1, now)) {
+                updateHUD();
+              }
+            }
+          }
+
           if (activePlayer.isCharging) {
             activePlayer.power += GAME_CONFIG.CHARGING_SPEED;
             if (activePlayer.power > 100) activePlayer.power = 100;
@@ -525,13 +713,26 @@
           }
         }
 
-        // Gravidade dos Tanques
+        // --- FÍSICA DO SALTO E GRAVIDADE DOS TANQUES ---
         [player1, player2].forEach((p) => {
-          if (!isSolid(p.x, p.y + 1)) {
-            p.y += 2;
+          if (p.jump) {
+            // Durante o salto: aplica velocidade vertical e ignora a colisão com o terreno
+            p.y += p.jump.vy;
+            p.jump.vy += 0.8; // Gravidade do salto
+
+            // Verifica se o salto terminou (voltou à altura original ou abaixo)
+            if (p.y >= p.jump.originalY) {
+              p.y = p.jump.originalY;
+              p.jump = null;
+            }
           } else {
-            while (isSolid(p.x, p.y) && p.y > 0) {
-              p.y -= 1;
+            // Gravidade normal: cai até encontrar terreno sólido
+            if (!isSolid(p.x, p.y + 1)) {
+              p.y += 2;
+            } else {
+              while (isSolid(p.x, p.y) && p.y > 0) {
+                p.y -= 1;
+              }
             }
           }
         });
