@@ -37,7 +37,8 @@ const GAME_CONFIG = {
   SLOPE_MOVEMENT_PENALTY: 2, // Passos extras necessários para subir slopes
 
   // 11. Configurações de salto (CTRL)
-  JUMP_DISTANCE: 40, // Distância do salto em pixels
-  JUMP_HEIGHT: 10, // Altura do salto em pixels
+  JUMP_DISTANCE: 40, // Distância lateral total do salto em pixels
+  JUMP_HEIGHT: 50, // Altura máxima da parábola em pixels
+  JUMP_DURATION: 600, // Duração total do salto em milissegundos
   JUMP_STEP_COST: 3, // Custo em passos para dar um salto
 };

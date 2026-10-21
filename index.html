@@ -41,6 +41,11 @@
               class="text-xs font-semibold text-slate-400 uppercase tracking-wider"
             >
               Jogador 1
+              <span
+                id="p1MobileName"
+                class="text-[10px] text-slate-400 font-normal"
+                >(Tanque)</span
+              >
             </div>
             <div
               class="w-32 bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-700 mt-1"
@@ -85,6 +90,11 @@
               class="text-xs font-semibold text-slate-400 uppercase tracking-wider"
             >
               Jogador 2
+              <span
+                id="p2MobileName"
+                class="text-[10px] text-slate-400 font-normal"
+                >(Tanque)</span
+              >
             </div>
             <div
               class="w-32 bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-700 mt-1"
@@ -101,10 +111,33 @@
         </div>
       </div>
 
-      <!-- Tela do Canvas -->
+      <!-- Tela do Canvas & Modal de Seleção -->
       <div id="gameContainer">
         <canvas id="terrainCanvas" width="800" height="400"></canvas>
         <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+        <!-- Modal de Seleção de Mobiles -->
+        <div
+          id="selectionModal"
+          class="absolute inset-0 bg-slate-950/95 z-50 flex flex-col items-center justify-center gap-5 p-6 backdrop-blur-md"
+        >
+          <h2
+            id="selectionTitle"
+            class="text-2xl font-black text-amber-400 tracking-wide"
+          >
+            JOGADOR 1: ESCOLHA SEU MOBILE
+          </h2>
+
+          <div
+            id="mobileOptions"
+            class="grid grid-cols-3 gap-4 text-center max-w-[700px]"
+          ></div>
+
+          <div
+            id="mobileSelectionHint"
+            class="text-xs text-slate-400 font-medium bg-slate-900 px-4 py-2 rounded-lg border border-slate-800"
+          ></div>
+        </div>
       </div>
 
       <!-- Painel da Barra de Força Expansível & Ângulo -->
@@ -123,7 +156,6 @@
             >
           </div>
           <div class="flex items-center gap-4">
-            <!-- Histórico Completo de Força e Ângulo -->
             <div class="text-sky-400 font-semibold" id="prevShotInfo">
               P1 Anterior: -- | P2 Anterior: --
             </div>
@@ -150,13 +182,9 @@
           </div>
         </div>
 
-        <!-- Barra de Força Principal (Grande) -->
         <div class="power-bar-container">
-          <!-- Marcador do histórico do tiro anterior do jogador atual -->
           <div id="lastPowerMarker" class="last-power-marker"></div>
           <div id="lastPowerLabel" class="last-power-label">Anterior</div>
-
-          <!-- Preenchimento da Força -->
           <div id="powerBarFill" class="power-bar-fill"></div>
         </div>
       </div>
@@ -193,11 +221,10 @@
       </div>
     </main>
 
-    <!-- Versão do Jogo -->
-    <footer class="mt-6 text-center text-slate-500 text-xs">v 1.0.1</footer>
+    <footer class="mt-6 text-center text-slate-500 text-xs">v 1.1.0</footer>
 
-    <!-- Importação do arquivo de configurações externo -->
     <script src="config.js"></script>
+    <script src="mobiles.js"></script>
 
     <script>
       // --- CANVAS & ELEMENTOS DOM ---
@@ -213,7 +240,6 @@
       const hp2Text = document.getElementById("hp2Text");
 
       const turnBadge = document.getElementById("turnBadge");
-      const windDisplay = document.getElementById("windDisplay");
       const angleDisplay = document.getElementById("angleDisplay");
       const powerPercent = document.getElementById("powerPercent");
       const powerBarFill = document.getElementById("powerBarFill");
@@ -221,54 +247,43 @@
       const lastPowerMarker = document.getElementById("lastPowerMarker");
       const lastPowerLabel = document.getElementById("lastPowerLabel");
       const prevShotInfo = document.getElementById("prevShotInfo");
+      const selectionModal = document.getElementById("selectionModal");
+      const selectionTitle = document.getElementById("selectionTitle");
+      const p1MobileName = document.getElementById("p1MobileName");
+      const p2MobileName = document.getElementById("p2MobileName");
+      const mobileOptions = document.getElementById("mobileOptions");
+      const mobileSelectionHint = document.getElementById(
+        "mobileSelectionHint"
+      );
 
-      const windTurnsDisplay = document.getElementById("totalTurnsDisplay");
-
+      let gameState = "SELECTING_P1"; // 'SELECTING_P1', 'SELECTING_P2', 'PLAYING'
       let wind = Math.floor(Math.random() * 21) - 10;
-      let windTurnsRemaining = 0; // Quantos turnos faltam para o vento mudar
+      let windTurnsRemaining = 0;
       let currentTurn = 1;
       let totalTurns = 0;
       let isAnimating = false;
 
-      // --- ESTRUTURA DOS JOGADORES ---
-      const player1 = {
+      // --- ESTRUTURA DOS JOGADORES (criados a partir do registro de mobiles) ---
+      // `let` é necessário porque a seleção de mobile recria os jogadores.
+      let player1 = MobileManager.createPlayer({
         id: 1,
+        mobileId: "tank",
         x: 120,
         y: 100,
-        width: 26,
-        height: 16,
         angle: 45,
-        power: 0,
-        lastPower: null,
-        lastAngle: null,
-        hp: 100,
         color: "#ef4444",
-        isCharging: false,
-        steps: GAME_CONFIG.MAX_MOVEMENT_STEPS,
-        lastMoveTime: 0,
-        jump: null,
-      };
+      });
 
-      const player2 = {
+      let player2 = MobileManager.createPlayer({
         id: 2,
+        mobileId: "tank",
         x: 680,
         y: 100,
-        width: 26,
-        height: 16,
         angle: 135,
-        power: 0,
-        lastPower: null,
-        lastAngle: null,
-        hp: 100,
         color: "#4fbd2d",
-        isCharging: false,
-        steps: GAME_CONFIG.MAX_MOVEMENT_STEPS,
-        lastMoveTime: 0,
-      };
+      });
 
       let projectile = null;
-      let isJumping = false;
-      let jumpVelocity = 0;
 
       // --- GERADORES DE TERRENO ---
       function initTerrain() {
@@ -319,13 +334,18 @@
         hp1Text.textContent = player1.hp;
         hp2Text.textContent = player2.hp;
 
-        // Atualizar Total de Turnos
+        p1MobileName.textContent = `(${
+          MobileManager.get(player1.mobileId).name
+        })`;
+        p2MobileName.textContent = `(${
+          MobileManager.get(player2.mobileId).name
+        })`;
+
         const totalTurnsDisplay = document.getElementById("totalTurnsDisplay");
         if (totalTurnsDisplay) {
           totalTurnsDisplay.textContent = totalTurns;
         }
 
-        // Atualizar Bússola Visual no cenário
         drawInGameWindCompass();
 
         if (currentTurn === 1) {
@@ -351,7 +371,6 @@
             : "--";
         prevShotInfo.textContent = `P1 Ant: ${p1Last} | P2 Ant: ${p2Last}`;
 
-        // Atualizar passos restantes do jogador ativo
         const stepsDisplay = document.getElementById("stepsDisplay");
         if (stepsDisplay) {
           stepsDisplay.textContent = activePlayer.steps;
@@ -360,15 +379,12 @@
         updatePowerMarker(activePlayer.lastPower);
       }
 
-      // --- DESENHAR BÚSSOLA DE VENTO E STATUS DE TURNOS DENTRO DO CENÁRIO ---
       function drawInGameWindCompass() {
-        const cx = gameCanvas.width / 2; // Centro horizontal da tela (400px)
-        const cy = 42; // Posição vertical flutuante
-        const radius = 26; // Raio do mostrador
+        const cx = gameCanvas.width / 2;
+        const cy = 42;
+        const radius = 26;
 
         ctx.save();
-
-        // 1. Fundo circular translúcido com borda azul neon
         ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -378,7 +394,6 @@
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // 2. Linhas guia em cruz
         ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -388,7 +403,6 @@
         ctx.lineTo(cx + radius - 4, cy);
         ctx.stroke();
 
-        // 3. Seta do Vento (Comprimento e cor variam com a força e direção)
         if (wind !== 0) {
           const absWind = Math.abs(wind);
           const maxWind =
@@ -403,7 +417,6 @@
           const startX = cx - (arrowLength / 2) * dir;
           const endX = cx + (arrowLength / 2) * dir;
 
-          // Haste
           ctx.strokeStyle = arrowColor;
           ctx.lineWidth = 3.5;
           ctx.lineCap = "round";
@@ -412,7 +425,6 @@
           ctx.lineTo(endX, cy);
           ctx.stroke();
 
-          // Cabeça
           ctx.fillStyle = arrowColor;
           ctx.beginPath();
           ctx.moveTo(endX + 4 * dir, cy);
@@ -421,14 +433,12 @@
           ctx.closePath();
           ctx.fill();
         } else {
-          // Vento Neutro
           ctx.fillStyle = "#94a3b8";
           ctx.beginPath();
           ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
           ctx.fill();
         }
 
-        // 4. Intensidade do Vento dentro da bússola (destaque amarelo)
         ctx.font = "bold 13px sans-serif";
         ctx.textAlign = "center";
         ctx.fillStyle = "#f59e0b";
@@ -458,18 +468,65 @@
       const keys = {};
 
       window.addEventListener("keydown", (e) => {
-        // Impede o scroll da página ao usar as setas, espaço e CTRL
         if (
-          e.code === "ArrowLeft" ||
-          e.code === "ArrowRight" ||
-          e.code === "ArrowUp" ||
-          e.code === "ArrowDown" ||
-          e.code === "Space" ||
-          e.code === "ControlLeft" ||
-          e.code === "ControlRight"
+          [
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "Space",
+            "ControlLeft",
+            "ControlRight",
+            "Digit1",
+            "Digit2",
+            "Digit3",
+            "Numpad1",
+            "Numpad2",
+            "Numpad3",
+            "Enter",
+          ].includes(e.code)
         ) {
           e.preventDefault();
         }
+
+        // Fluxo de seleção de mobiles antes da partida
+        if (gameState === "SELECTING_P1") {
+          const mobile1 = MobileManager.getByHotkey(e.code);
+          if (mobile1) {
+            player1 = MobileManager.createPlayer({
+              id: 1,
+              mobileId: mobile1.id,
+              x: 120,
+              y: 100,
+              angle: 45,
+              color: "#ef4444",
+            });
+          }
+          gameState = "SELECTING_P2";
+          selectionTitle.textContent = "JOGADOR 2: ESCOLHA SEU MOBILE";
+          updateHUD();
+          return;
+        }
+
+        if (gameState === "SELECTING_P2") {
+          const mobile2 = MobileManager.getByHotkey(e.code);
+          if (mobile2) {
+            player2 = MobileManager.createPlayer({
+              id: 2,
+              mobileId: mobile2.id,
+              x: 680,
+              y: 100,
+              angle: 135,
+              color: "#4fbd2d",
+            });
+          }
+          gameState = "PLAYING";
+          selectionModal.style.display = "none";
+          updateHUD();
+          return;
+        }
+
+        if (gameState !== "PLAYING") return;
 
         keys[e.code] = true;
         const activePlayer = currentTurn === 1 ? player1 : player2;
@@ -479,7 +536,6 @@
           activePlayer.power = 0;
         }
 
-        // Salto com CTRL
         if (
           (e.code === "ControlLeft" || e.code === "ControlRight") &&
           !e.repeat &&
@@ -493,6 +549,7 @@
       });
 
       window.addEventListener("keyup", (e) => {
+        if (gameState !== "PLAYING") return;
         keys[e.code] = false;
         const activePlayer = currentTurn === 1 ? player1 : player2;
 
@@ -509,6 +566,7 @@
         const speed = p.power * GAME_CONFIG.POWER_SCALE;
 
         projectile = {
+          mobileId: p.mobileId,
           x: p.x,
           y: p.y - p.height / 2,
           vx: Math.cos(rad) * speed,
@@ -522,17 +580,14 @@
         totalTurns += 1;
         currentTurn = currentTurn === 1 ? 2 : 1;
 
-        // Decrementa a duração do vento atual
         windTurnsRemaining--;
-
-        // Se a duração do vento acabou, sorteia um novo vento
         if (windTurnsRemaining <= 0) {
           generateNewWind();
         }
 
         const activePlayer = currentTurn === 1 ? player1 : player2;
         activePlayer.power = 0;
-        activePlayer.steps = GAME_CONFIG.MAX_MOVEMENT_STEPS;
+        MobileManager.resetSteps(activePlayer);
         activePlayer.lastMoveTime = 0;
         powerBarFill.style.width = "0%";
         powerPercent.textContent = "0%";
@@ -541,21 +596,16 @@
       }
 
       function generateNewWind() {
-        // Sorteia valor de -9 a +9
         wind =
           Math.floor(Math.random() * (GAME_CONFIG.WIND_MAX * 2 + 1)) -
           GAME_CONFIG.WIND_MAX;
 
-        // Sorteia quantos turnos esse vento vai durar (entre 2 e 5)
         const minTurns = GAME_CONFIG.WIND_MIN_TURNS;
         const maxTurns = GAME_CONFIG.WIND_MAX_TURNS;
         windTurnsRemaining =
           Math.floor(Math.random() * (maxTurns - minTurns + 1)) + minTurns;
       }
 
-      // --- MOVIMENTO DO MOBILE (CONSIDERANDO ACLIVES E DECLIVES) ---
-
-      // Obtém os pixels de uma coluna vertical do terreno
       function getTerrainColumn(x) {
         if (x < 0 || x >= terrainCanvas.width) return null;
         return terrainCtx.getImageData(
@@ -566,7 +616,6 @@
         ).data;
       }
 
-      // Encontra a superfície do solo (primeiro pixel sólido) dentro de uma janela de busca
       function findGroundY(column, referenceY) {
         const searchLimit = 140;
         const top = Math.max(0, referenceY - searchLimit);
@@ -582,12 +631,11 @@
         return null;
       }
 
-      // Tenta mover o mobile. Retorna true se o movimento foi realizado.
       function tryMovePlayer(player, direction, now) {
+        const mobile = MobileManager.get(player.mobileId);
         const halfWidth = player.width / 2;
-        const newX = player.x + direction * GAME_CONFIG.MOVEMENT_STEP_SIZE;
+        const newX = player.x + direction * mobile.movement.stepSize;
 
-        // Limites laterais da tela
         if (newX - halfWidth < 0 || newX + halfWidth > gameCanvas.width) {
           return false;
         }
@@ -599,8 +647,6 @@
         const currentGroundY = findGroundY(currentColumn, player.y + 1);
         const newGroundY = findGroundY(newColumn, player.y + 1);
 
-        // Se não há terreno na nova posição (buraco), permite o movimento
-        // A gravidade fará o mobile cair no buraco
         if (newGroundY === null) {
           player.x = newX;
           player.steps -= 1;
@@ -610,19 +656,13 @@
 
         if (currentGroundY === null) return false;
 
-        // dy positivo = terreno sobe (aclive), negativo = desce (declive)
         const dy = currentGroundY - newGroundY;
         const slopeAngle =
-          (Math.atan2(Math.abs(dy), GAME_CONFIG.MOVEMENT_STEP_SIZE) * 180) /
-          Math.PI;
+          (Math.atan2(Math.abs(dy), mobile.movement.stepSize) * 180) / Math.PI;
 
-        // Limite máximo de inclinação permitido
         if (slopeAngle > GAME_CONFIG.MAX_SLOPE_ANGLE) return false;
-
-        // Se o movimento em aclives estiver desabilitado, só permite terreno plano
         if (!GAME_CONFIG.ALLOW_SLOPE_MOVEMENT && slopeAngle > 0.5) return false;
 
-        // Custo em passos: subir aclive consome passos extras
         let stepCost = 1;
         if (dy > 0) {
           stepCost += GAME_CONFIG.SLOPE_MOVEMENT_PENALTY;
@@ -637,31 +677,32 @@
 
       // --- FUNÇÃO DE SALTO (CTRL) ---
       function tryJumpPlayer(player) {
-        // Verifica se tem passos suficientes
-        if (player.steps < GAME_CONFIG.JUMP_STEP_COST) return false;
+        const mobile = MobileManager.get(player.mobileId);
+        const jumpConfig = mobile.jump;
 
-        // Direção do salto baseada no ângulo do cano
+        if (player.steps < jumpConfig.cost) return false;
+
         const rad = (player.angle * Math.PI) / 180;
         const dir = Math.cos(rad) >= 0 ? 1 : -1;
 
-        // Calcula a nova posição X após o salto
-        const newX = player.x + dir * GAME_CONFIG.JUMP_DISTANCE;
+        const newX = player.x + dir * jumpConfig.distance;
         const halfWidth = player.width / 2;
 
-        // Verifica limites da tela
         if (newX - halfWidth < 0 || newX + halfWidth > gameCanvas.width) {
           return false;
         }
 
-        // Consome passos
-        player.steps -= GAME_CONFIG.JUMP_STEP_COST;
+        player.steps -= jumpConfig.cost;
         player.lastMoveTime = Date.now();
 
-        // Executa o salto: move horizontalmente e sobe
-        player.x = newX;
+        // Salto em parábola: deslocamento lateral animado com pico no meio
         player.jump = {
-          vy: -GAME_CONFIG.JUMP_HEIGHT,
+          startX: player.x,
+          targetX: newX,
           originalY: player.y,
+          startedAt: performance.now(),
+          duration: jumpConfig.duration,
+          height: jumpConfig.height,
         };
 
         return true;
@@ -669,11 +710,12 @@
 
       // --- LOOP DE LÓGICA (UPDATE) ---
       function update() {
+        if (gameState !== "PLAYING") return;
+
         const activePlayer = currentTurn === 1 ? player1 : player2;
         const now = Date.now();
 
         if (!isAnimating) {
-          // Controle de ângulo
           if (currentTurn === 1) {
             if (keys["ArrowUp"] && activePlayer.angle < 90)
               activePlayer.angle += 1;
@@ -687,10 +729,10 @@
           }
           angleDisplay.textContent = `${activePlayer.angle}°`;
 
-          // Controle de movimento (Left/Right) com consideração de aclives/declives
           if (
             activePlayer.steps > 0 &&
-            now - activePlayer.lastMoveTime >= GAME_CONFIG.MOVEMENT_INTERVAL
+            now - activePlayer.lastMoveTime >=
+              MobileManager.get(activePlayer.mobileId).movement.interval
           ) {
             if (keys["ArrowLeft"]) {
               if (tryMovePlayer(activePlayer, -1, now)) {
@@ -716,13 +758,22 @@
         // --- FÍSICA DO SALTO E GRAVIDADE DOS TANQUES ---
         [player1, player2].forEach((p) => {
           if (p.jump) {
-            // Durante o salto: aplica velocidade vertical e ignora a colisão com o terreno
-            p.y += p.jump.vy;
-            p.jump.vy += 0.8; // Gravidade do salto
+            const jump = p.jump;
+            const progress = Math.min(
+              (performance.now() - jump.startedAt) / jump.duration,
+              1
+            );
 
-            // Verifica se o salto terminou (voltou à altura original ou abaixo)
-            if (p.y >= p.jump.originalY) {
-              p.y = p.jump.originalY;
+            // Deslocamento horizontal uniforme durante toda a parábola
+            p.x = jump.startX + (jump.targetX - jump.startX) * progress;
+
+            // Curva quadrática: começa e termina na altura inicial e atinge
+            // o pico (JUMP_HEIGHT) exatamente no meio do trajeto lateral.
+            p.y = jump.originalY - 4 * jump.height * progress * (1 - progress);
+
+            if (progress >= 1) {
+              p.x = jump.targetX;
+              p.y = jump.originalY;
               p.jump = null;
             }
           } else {
@@ -794,16 +845,12 @@
         }
       }
 
-      // --- LOOP DE DESENHO (RENDER) ---
-      function drawTank(p) {
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.roundRect(p.x - p.width / 2, p.y - p.height, p.width, p.height, 4);
-        ctx.fill();
+      // --- DESENHO DOS MOBILES (design definido em mobiles.js) ---
+      function drawMobile(p) {
+        ctx.save();
+        MobileManager.draw(ctx, p);
 
-        ctx.fillStyle = "rgba(0,0,0,0.2)";
-        ctx.fillRect(p.x - p.width / 2, p.y - 4, p.width, 4);
-
+        // --- CANO / TORRE (Comum a todos para manter a mira trigonométrica) ---
         const rad = (p.angle * Math.PI) / 180;
         ctx.strokeStyle = "#0f172a";
         ctx.lineWidth = 4;
@@ -816,53 +863,29 @@
         );
         ctx.stroke();
 
-        if (p.lastPower !== null && currentTurn === p.id && !isAnimating) {
-          ctx.fillStyle = "rgba(15, 23, 42, 0.75)";
-          // ctx.fillRect(p.x - 30, p.y - p.height - 38, 60, 16);
-          // ctx.fillStyle = "#38bdf8";
-          ctx.font = "bold 10px sans-serif";
-          ctx.textAlign = "center";
-          // ctx.fillText(
-          //   `Último: ${Math.round(p.lastPower)}% / ${p.lastAngle}°`,
-          //   p.x,
-          //   p.y - p.height - 26
-          // );
-        }
-
-        if (currentTurn === p.id && !isAnimating) {
+        // Indicador de Turno Ativo
+        if (currentTurn === p.id && gameState === "PLAYING" && !isAnimating) {
           ctx.fillStyle = "#f59e0b";
           ctx.beginPath();
-          ctx.moveTo(p.x, p.y - p.height - 10);
-          ctx.lineTo(p.x - 5, p.y - p.height - 18);
-          ctx.lineTo(p.x + 5, p.y - p.height - 18);
+          ctx.moveTo(p.x, p.y - p.height - 12);
+          ctx.lineTo(p.x - 5, p.y - p.height - 20);
+          ctx.lineTo(p.x + 5, p.y - p.height - 20);
           ctx.closePath();
           ctx.fill();
         }
+
+        ctx.restore();
       }
 
       function draw() {
         ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
 
-        drawTank(player1);
-        drawTank(player2);
+        drawMobile(player1);
+        drawMobile(player2);
         drawInGameWindCompass();
 
         if (projectile) {
-          ctx.fillStyle = "#0f172a";
-          ctx.beginPath();
-          ctx.arc(projectile.x, projectile.y, 4, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-          ctx.beginPath();
-          ctx.arc(
-            projectile.x - projectile.vx * 1.5,
-            projectile.y - projectile.vy * 1.5,
-            2.5,
-            0,
-            Math.PI * 2
-          );
-          ctx.fill();
+          MobileManager.drawProjectile(ctx, projectile);
         }
       }
 
@@ -872,6 +895,7 @@
         requestAnimationFrame(gameLoop);
       }
 
+      MobileManager.renderSelectionCards(mobileOptions, mobileSelectionHint);
       generateNewWind();
       initTerrain();
       updateHUD();
